@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>מונה סיגריות</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>מונה סיגריות</h1>
+        <button id="smokeButton">עישנתי סיגריה עכשיו</button>
+        <p>מספר סיגריות היום: <span id="cigaretteCount">0</span> (<span id="percentage">0%</span>)</p>
+        <p>זמן מאז הסיגריה האחרונה: <span id="timeSinceLast">אין נתונים</span></p>
+        <p>שיא זמן בין סיגריות: <span id="recordTime">אין שיא</span></p>
+        <div class="scale-container">
+            <h3>סקאלה אנכית</h3>
+            <div id="scale"></div>
+        </div>
+        <div class="chart-container">
+            <h3>גרף התקדמות</h3>
+            <canvas id="progressChart"></canvas>
+        </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
