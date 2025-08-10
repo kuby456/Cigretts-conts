@@ -1,28 +1,179 @@
 <!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>מונה סיגריות</title>
-    <link rel="stylesheet" href="style.css">
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>רולטת עישון — ממוצע זמן בין עישונים</title>
+<style>
+  :root{ color-scheme: light; }
+  *{ box-sizing:border-box; }
+  body{
+    margin:0; font-family:Arial, system-ui, sans-serif;
+    background:#fff; color:#111; padding:24px; line-height:1.5;
+  }
+  .wrap{ max-width:520px; margin-inline:auto; }
+  h1{ font-size:1.25rem; margin:0 0 12px; }
+  .stats{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:12px; }
+  .kpi{ border:1px solid #ddd; border-radius:10px; padding:10px; text-align:center; }
+  .kpi .name{ font-size:.8rem; color:#666; }
+  .kpi .val{ font-size:1.2rem; font-weight:700; margin-top:4px; min-height:1.2em; }
+  .panel{ border:1px solid #ddd; border-radius:12px; padding:14px; background:#fff; }
+  #spinBtn{
+    display:block; width:100%; padding:12px 16px; margin-top:12px;
+    border:1px solid #111; border-radius:10px; background:#111; color:#fff; font-weight:700; cursor:pointer;
+  }
+  #spinBtn:disabled{ opacity:.6; cursor:not-allowed; }
+  .result{
+    font-size:1.05rem; padding:8px 10px; border:1px solid #eee; border-radius:8px; min-height:44px;
+    display:flex; align-items:center; justify-content:center; background:#fafafa;
+  }
+  .tiny{ font-size:.8rem; color:#888; }
+</style>
 </head>
 <body>
-    <div class="container">
-        <h1>מונה סיגריות</h1>
-        <button id="smokeButton">עישנתי סיגריה עכשיו</button>
-        <p>מספר סיגריות היום: <span id="cigaretteCount">0</span> (<span id="percentage">0%</span>)</p>
-        <p>זמן מאז הסיגריה האחרונה: <span id="timeSinceLast">אין נתונים</span></p>
-        <p>שיא זמן בין סיגריות: <span id="recordTime">אין שיא</span></p>
-        <div class="scale-container">
-            <h3>סקאלה אנכית</h3>
-            <div id="scale"></div>
-        </div>
-        <div class="chart-container">
-            <h3>גרף התקדמות</h3>
-            <canvas id="progressChart"></canvas>
-        </div>
+  <div class="wrap">
+    <h1>רולטת עישון — ממוצע בין עישונים</h1>
+
+    <!-- נתונים מעל הכפתור -->
+    <div class="stats">
+      <div class="kpi">
+        <div class="name">סה״כ הגרלות</div>
+        <div class="val" id="countAll">0</div>
+      </div>
+      <div class="kpi">
+        <div class="name">סה״כ עישונים (כל דבר > 0)</div>
+        <div class="val" id="countSmokes">0</div>
+      </div>
+      <div class="kpi">
+        <div class="name">ממוצע זמן בין עישונים</div>
+        <div class="val" id="avgInterval">—</div>
+      </div>
     </div>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="script.js"></script>
+
+    <!-- תיבה + כפתור -->
+    <div class="panel">
+      <div class="result" id="result">—</div>
+      <button id="spinBtn">הגרל</button>
+      <div class="tiny" style="margin-top:6px">
+        האפשרויות: לא לעשן (0), סיגריה (1), חצי (0.5), שאכטה (0.1), לצחצח ואז לעשן (1).
+      </div>
+    </div>
+  </div>
+
+<script>
+(() => {
+  // האפשרויות
+  const OPTIONS = [
+    { label: "לא לעשן כרגע", amount: 0.0 },
+    { label: "לעשן סיגריה", amount: 1.0 },
+    { label: "לעשן חצי סיגריה", amount: 0.5 },
+    { label: "לעשן שאכטה", amount: 0.1 },
+    { label: "לצחצח שיניים ואז לעשן", amount: 1.0 },
+  ];
+
+  // DOM
+  const el = {
+    countAll: document.getElementById('countAll'),
+    countSmokes: document.getElementById('countSmokes'),
+    avgInterval: document.getElementById('avgInterval'),
+    result: document.getElementById('result'),
+    spinBtn: document.getElementById('spinBtn'),
+  };
+
+  // אחסון מקומי
+  // נשמור: סה"כ הגרלות, ורשימת זמני עישון (timestamps) לכל אירוע עם amount>0
+  const KEY = 'smokeRoulette.timeAvg.v1';
+  let state = { draws: 0, smokeTimes: [] };
+
+  function load(){
+    try{
+      const raw = localStorage.getItem(KEY);
+      if(raw){
+        const s = JSON.parse(raw);
+        if(s && typeof s === 'object'){
+          state.draws = Number.isFinite(s.draws) ? s.draws : 0;
+          state.smokeTimes = Array.isArray(s.smokeTimes) ? s.smokeTimes.filter(t => Number.isFinite(t)) : [];
+        }
+      }
+    }catch{}
+    render();
+  }
+
+  function save(){
+    localStorage.setItem(KEY, JSON.stringify(state));
+  }
+
+  // עזרי זמן
+  const sleep = ms => new Promise(r=>setTimeout(r, ms));
+
+  function averageMinutesBetween(times){
+    if(!times || times.length < 2) return null;
+    // הפרשים בין אירועים עוקבים (בדקות)
+    let total = 0;
+    for(let i=1;i<times.length;i++){
+      total += (times[i] - times[i-1]) / 60000; // למספר דקות
+    }
+    return total / (times.length - 1);
+  }
+
+  // פורמט בעברית בסגנון הדוגמאות: "שעה ו10", "30", "שעתיים ו50"
+  function formatHebrewDuration(minsFloat){
+    if(minsFloat == null) return '—';
+    const mins = Math.round(minsFloat);
+    if(mins < 60) return String(mins); // רק מספר דק׳ (כמו בדוגמה "30")
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    let hoursWord;
+    if(h === 1) hoursWord = 'שעה';
+    else if(h === 2) hoursWord = 'שעתיים';
+    else hoursWord = `${h} שעות`;
+    if(m === 0) return hoursWord;
+    return `${hoursWord} ו${m}`;
+  }
+
+  function render(){
+    el.countAll.textContent = state.draws;
+    el.countSmokes.textContent = state.smokeTimes.length;
+    const avgMins = averageMinutesBetween(state.smokeTimes);
+    el.avgInterval.textContent = formatHebrewDuration(avgMins);
+  }
+
+  // אנימציה קצרה שרצה בין הטקסטים ועוצרת אקראית
+  async function spinOnce(){
+    el.spinBtn.disabled = true;
+
+    const targetIndex = Math.floor(Math.random() * OPTIONS.length);
+    const cycles = 2 + Math.floor(Math.random()*2); // 2-3 סיבובים
+    let steps = cycles*OPTIONS.length + targetIndex + 1;
+    let idx = 0;
+    let delay = 60;
+
+    while(steps > 0){
+      el.result.textContent = OPTIONS[idx % OPTIONS.length].label;
+      if(steps < OPTIONS.length + 2) delay += 50; // האטה לקראת עצירה
+      await sleep(delay);
+      idx++; steps--;
+    }
+
+    const chosen = OPTIONS[targetIndex];
+    el.result.textContent = `${chosen.label} — (${chosen.amount.toFixed(2)})`;
+
+    // עדכון מונים
+    state.draws += 1;
+    if(chosen.amount > 0){
+      state.smokeTimes.push(Date.now()); // שעון המכשיר
+    }
+    save();
+    render();
+
+    el.spinBtn.disabled = false;
+  }
+
+  el.spinBtn.addEventListener('click', spinOnce);
+
+  // אתחול
+  load();
+})();
+</script>
 </body>
 </html>
